@@ -1,5 +1,5 @@
 {
-    "name": "phpdelayqueue",
+    "name": "phpdelay/phpdelayqueue",
     "description": "基于redis的延时消费队列",
     "keywords": ["queue","php","redis"],
     "type": "library",
