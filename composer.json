@@ -1,0 +1,14 @@
+{
+    "name": "phpdelayqueue",
+    "description": "基于redis的延时消费队列",
+    "keywords": ["queue","php","redis"],
+    "type": "library",
+    "version": "1.0.0",
+    "authors": [
+        {
+            "name": "lvhui",
+            "email": "690485272@qq.com"
+        }
+    ],
+    "require": {}
+}
