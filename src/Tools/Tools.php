@@ -12,6 +12,7 @@ use App\Libraries\Tools\WriteLog;
 use App\Utils\Singleton;
 use PhpDelayQueue\Config\Config;
 use PhpDelayQueue\Handler\CurlHandler;
+use PhpDelayQueue\Handler\MainHandler;
 
 class Tools
 {
@@ -60,6 +61,27 @@ class Tools
         return $id;
     }
 
+
+    /**
+     * 获取所有的正在运行的服务id
+     * @param $name
+     * @return array
+     */
+    public function getServerProcessName($name, $cmdName)
+    {
+        $_cmd = "ps -ef | grep '$name' | grep -v grep |  grep '$cmdName' | awk '{print $8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19}'";
+        $fp = popen($_cmd, 'r');
+        $id = '';
+        while (!feof($fp) && $fp) {
+            $_line = trim(fgets($fp, 1024));
+            if ($_line) {
+                $id = $_line;
+            }
+        }
+        fclose($fp);
+        return $id;
+    }
+
     /**
      * kill 进程id
      * @param $ids
@@ -74,7 +96,7 @@ class Tools
                 exec('kill -9 ' . $id . ' > /dev/null 2>&1');
             }
         } else {
-            exec('kill -9 ' . $id . ' > /dev/null 2>&1');
+            exec('kill -9 ' . $ids . ' > /dev/null 2>&1');
         }
     }
 
@@ -85,11 +107,11 @@ class Tools
      */
     public function sendWarnToDing($task, $processId, $detail, $topic)
     {
-        if (empty(Config::$topic[$topic])) {
+        if (empty(MainHandler::getInstance()->getTopicInfo($topic, 'status'))) {
             exit;
         }
 
-        $at = isset(Config::$topic[$topic]['ding_at']) ? Config::$topic[$topic]['ding_at'] : Config::ORIGIN_DING_AT;
+        $at = MainHandler::getInstance()->getTopicInfo($topic, 'ding_at') ? MainHandler::getInstance()->getTopicInfo($topic, 'ding_at') : Config::ORIGIN_DING_AT;
         $img = 'http://image.hzyuewan.com/sucai/15919305363743.jpg';
         $data = [
             "msgtype" => "markdown",
@@ -107,7 +129,7 @@ class Tools
         ];
         $data['markdown']['text'] = sprintf($data['markdown']['text'], $task, $processId, $img, $detail);
         //获取报警url
-        $url = Config::DING_WARNING_URL . '?access_token=' . Config::$topic[$topic]['ding_token'];
+        $url = Config::DING_WARNING_URL . '?access_token=' . MainHandler::getInstance()->getTopicInfo($topic, 'ding_token');
         //发送报警信息
         $res = CurlHandler::httpSimpleJsonData($url, json_encode($data), 2);
     }

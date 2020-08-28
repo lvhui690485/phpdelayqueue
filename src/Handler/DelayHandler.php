@@ -18,8 +18,13 @@ Class DelayHandler
      */
     public function startDelayService($num)
     {
-        if (Tools::getInstance()->getChildNum(Config::$processArr['dq_delay']) < $num) {
+        $delayNum = Tools::getInstance()->getChildNum(Config::$processArr['dq_delay']);
+        if ($delayNum < $num) {
             for ($i = 1; $i <= $num; $i++) {
+                if (!empty(Tools::getInstance()->getChildNum(Config::$processArr['dq_delay'] . '_' . $i))) {
+                    DqLog::info('master', '已经有了', Config::$processArr['dq_delay'] . '_' . $i, 'delay');
+                    continue;
+                }
                 $pid = pcntl_fork();
                 if ($pid == -1) {
                     DqLog::error('delay', 'fork error', '', 'delay');
@@ -54,7 +59,17 @@ Class DelayHandler
                             $info['body'] = $detailInfo;
                             $info['topic'] = $res['topic'];
                             $info['jobId'] = $res['jobId'];
-                            RedisHandler::getInstance()->lPushReadyTask($redis, $info);
+                            $level = MainHandler::getInstance()->getTopicInfo($res['topic'], 'level');
+                            if ($level == 1) {
+                                DqLog::info('delay', '低', $res['topic'], 'delay');
+                                RedisHandler::getInstance()->lPushReadyTask($redis, $info);
+                            } elseif ($level == 2) {
+                                DqLog::info('delay', '中', $res['topic'], 'delay');
+                                RedisHandler::getInstance()->lPushReadyTask($redis, $info);
+                            } else {
+                                DqLog::info('delay', '高', $res['topic'], 'delay');
+                                RedisHandler::getInstance()->rPushReadyTask($redis, $info);
+                            }
                         }
                     }
                 }

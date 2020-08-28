@@ -17,7 +17,7 @@ Class CurdlHandler
     public static function handleTaskInfo($info)
     {
         if (!isset($info['cmd']) || !in_array($info['cmd'], Config::CURD_COMMAND)) {
-            exit(json_encode(['code' => -1, 'msg' => '非法请求']));
+            return json_encode(['code' => -1, 'msg' => '非法请求']);
         }
 
         //hdel 库
@@ -25,8 +25,8 @@ Class CurdlHandler
             return json_encode(['code' => -1, 'msg' => '非法请求']);
         }
 
-        $topicInfo = MainHandler::getInstance()->getTopicInfo($info['topic']);
-        if (empty($topicInfo)) {
+        $topicInfo = MainHandler::getInstance()->getTopicInfo($info['topic'], '*');
+        if (empty($topicInfo) || ($topicInfo['status'] ?? 1) == 0) {
             return json_encode(['code' => -1, 'msg' => 'topic未注册']);
         }
         switch ($info['cmd']) {
@@ -50,7 +50,7 @@ Class CurdlHandler
         }
         $time = (int)$info['body']['runTime'] ?? 0;
         $time = $time == 0 ? time() + 1 : $time + 1;
-        if ($time > time() + 86400 * 30) {
+        if ($time > time() + 1 + 86400 * 30) {
             return json_encode(['code' => -1, 'msg' => '任务调度最大支持30天延迟任务']);
         }
         $jobId = !empty($info['jobId']) ? $info['jobId'] : md5($info['topic'] . microtime() . mt_rand(1, 100000));

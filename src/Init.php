@@ -11,6 +11,7 @@ use PhpDelayQueue\Exception\Exception;
 use PhpDelayQueue\Handler\ConsumeHandler;
 use PhpDelayQueue\Handler\DelayHandler;
 use PhpDelayQueue\Handler\MainHandler;
+use PhpDelayQueue\Handler\RedisHandler;
 use PhpDelayQueue\Tools\DqLog;
 use PhpDelayQueue\Tools\Tools;
 
@@ -39,6 +40,8 @@ class Init
     public function init()
     {
         DqLog::info('master', '服务进入', self::$action, 'master');
+        //初始化状态
+        RedisHandler::getInstance()->setServerStatus(0);
         //start 检测没有正在运行的则马上启动
         //reload 正在运行的需要设置退出信号kill并重启
         switch (self::$action) {
@@ -76,44 +79,48 @@ class Init
         DqLog::info('master', '服务开启,' . $processTitle . '进程id', posix_getpid(), 'master');
 
         while (true) {
-            //master进程
-            if (cli_get_process_title() == self::$dq_master) {
-                //启动关键服务
-                self::startDelayService();
-                self::startConsumeService();
-                /**
-                 * 回收子进程，避免成为僵死进程，占用服务器资源
-                 */
-                $ret = pcntl_waitpid(0, $status, WNOHANG);
-                $id = self::checkSelf(self::$dq_slave);
-                if (empty($id)) {
-                    DqLog::error('master', 'slave down,重新拉起', time(), 'master');
-                    Tools::getInstance()->sendOriginWarnToDing('slave down,重新拉起');
-                    try {
-                        $out = [];
-                        $command = Config::$phpBinPath . ' init.php slave > /dev/null 2>&1 &';
-                        exec($command, $out);
-                    } catch (Exception $e) {
-                        DqLog::error('master', 'master拉起slave异常', $e->getMessage(), 'master');
+            try {
+                //master进程
+                if (cli_get_process_title() == self::$dq_master) {
+                    //启动关键服务
+                    self::startDelayService();
+                    self::startConsumeService();
+                    //注册USR2信号
+                    self::masterRegisterUsr2Sin();
+
+                    //检测重启信号
+                    if (self::checkStatus()) {
+                        MainHandler::getInstance()->actionServer('reload');
+                    }
+                    //检测config 独立成项目启用
+//                    if (self::checkConfig()) {
+//                        DqLog::error('master', 'config', time(), 'master');
+//                        MainHandler::getInstance()->actionServer('reload');
+//                    }
+
+                    //回收子进程，避免成为僵死进程，占用服务器资源
+                    $ret = pcntl_waitpid(0, $status, WNOHANG);
+                    $id = self::checkSelf(self::$dq_slave);
+                    if (empty($id)) {
+                        DqLog::error('master', 'slave down,重新拉起', time(), 'master');
+                        Tools::getInstance()->sendOriginWarnToDing('slave down,重新拉起');
+                        MainHandler::getInstance()->actionServer('slave');
+                    }
+                } elseif (cli_get_process_title() == self::$dq_slave) {
+                    $id = self::checkSelf(self::$dq_master);
+                    if (empty($id)) {
+                        //todo 报警
+                        DqLog::error('master', 'slave重新拉起master', time(), 'master');
+                        Tools::getInstance()->sendOriginWarnToDing('master down,重新拉起');
+                        //自动拉起
+                        MainHandler::getInstance()->actionServer('reload');
                     }
                 }
-            } elseif (cli_get_process_title() == self::$dq_slave) {
-                $id = self::checkSelf(self::$dq_master);
-                if (empty($id)) {
-                    //todo 报警
-                    DqLog::error('master', 'slave重新拉起master', time(), 'master');
-                    Tools::getInstance()->sendOriginWarnToDing('master down,重新拉起');
-                    //自动拉起
-                    try {
-                        $out = [];
-                        $command = Config::$phpBinPath . ' init.php reload > /dev/null 2>&1 &';
-                        exec($command, $out);
-                    } catch (Exception $e) {
-                        DqLog::error('master', 'slave拉起master异常', $e->getMessage(), 'master');
-                    }
-                }
+                sleep(2);
+                pcntl_signal_dispatch();
+            } catch (\Exception $exception) {
+                DqLog::error('master', '任务调度异常', $e->getMessage(), 'master');
             }
-            sleep(2);
         }
     }
 
@@ -154,5 +161,22 @@ class Init
     public static function startConsumeService()
     {
         ConsumeHandler::getInstance()->startConsumeService(Config::DQ_CONSUME_NUM);
+    }
+
+    //master监听usr2信号
+    public static function masterRegisterUsr2Sin()
+    {
+        MainHandler::getInstance()->masterRegisterUsr2Sin();
+    }
+
+    //检测config
+    public static function checkConfig()
+    {
+        return MainHandler::getInstance()->checkConfig();
+    }
+
+    public static function checkStatus()
+    {
+        return RedisHandler::getInstance()->getServerStatus();
     }
 }
